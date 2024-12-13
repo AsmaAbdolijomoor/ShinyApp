@@ -46,7 +46,23 @@ set.seed(123)
 trainIndex <- createDataPartition(data$diagnosis, p = 0.8, list = FALSE)
 trainData <- data[trainIndex, ]
 testData <- data[-trainIndex, ]
-model <- train(diagnosis ~ ., data = trainData, method = "rf")
+min(trainData$radius_worst)
+max(trainData$radius_worst)
+model1 <- train(diagnosis ~ ., data = trainData)
+model <- train(diagnosis ~ area_worst + perimeter_worst + concave.points_worst + radius_worst, data = trainData)
+
+new_data <- data.frame(
+  area_worst = 0.1,
+  perimeter_worst = 0.1,
+  concave.points_worst = 0.1,
+  radius_worst = 0.1
+)
+
+# Make the prediction using the trained model
+prediction <- predict(model, new_data)
+
+# Print the prediction result
+print(prediction)
 
 # Define the UI (User Interface)
 ui <- fluidPage(
@@ -57,43 +73,40 @@ ui <- fluidPage(
       h3("Tumor Characteristics"),
       
       # Inputs for prediction
-      numericInput("radius", "Radius Mean", value = 14, min = 0, max = 30, step = 0.1),
-      numericInput("texture", "Texture Mean", value = 20, min = 0, max = 30, step = 0.1),
-      numericInput("perimeter", "Perimeter Mean", value = 90, min = 0, max = 200, step = 0.1),
-      numericInput("area", "Area Mean", value = 600, min = 0, max = 5000, step = 1),
-      numericInput("smoothness", "Smoothness Mean", value = 0.1, min = 0, max = 1, step = 0.01),
-      numericInput("compactness", "Compactness Mean", value = 0.1, min = 0, max = 1, step = 0.01),
-      numericInput("concavity", "Concavity Mean", value = 0.1, min = 0, max = 1, step = 0.01),
-      numericInput("concave_points", "Concave Points Mean", value = 0.1, min = 0, max = 1, step = 0.01),
-      numericInput("symmetry", "Symmetry Mean", value = 0.1, min = 0, max = 1, step = 0.01),
-      numericInput("radius_se", "Radius SE", value = 0.1, min = 0, max = 5, step = 0.01),
-      numericInput("fractal_dimension", "Fractal Dimension Mean", value = 0.1, min = 0, max = 1, step = 0.01),
-      actionButton("predict_btn", "Predict"),
+      numericInput("radius_worst", "Radius Worst", value = 0.1, min = -1.72, max = 4.09, step = 0.1),
+      numericInput("perimeter_worst", "Perimeter Worst", value = 0.1, min = -1.69, max = 4.28, step = 0.1),
+      numericInput("area_worst", "Area Worst", value = 0.1, min = -1.22, max = 5.92, step = 1),
+      numericInput("concave.points_worst", "Concave Points Worst", value = 0.1, min = -1.74, max = 2.68, step = 0.1),
+      actionButton("submit", "Predict"),
       
       hr(),
       h4("Model Prediction"),
-      verbatimTextOutput("prediction")
+      verbatimTextOutput("predictionResult") 
+      # verbatimTextOutput("prediction")
     ),
     mainPanel(
       tabsetPanel(
         tabPanel("Visualizations", 
                  plotOutput("histogram_radius"),
                  plotOutput("histogram_perimeter"),
-                 plotOutput("histogram_texture"),
+                 plotOutput("histogram_concave"),
                  plotOutput("histogram_area"),
                  plotOutput("boxplot_radius"),
                  plotOutput("boxplot_perimeter"),
-                 plotOutput("boxplot_texture"),
+                 plotOutput("boxplot_concave"),
                  plotOutput("boxplot_area"),
                  plotOutput("density_radius"),
                  plotOutput("density_perimeter"),
-                 plotOutput("density_texture"),
+                 plotOutput("density_concave"),
                  plotOutput("density_area"),
                  plotOutput("violin_radius"),
                  plotOutput("violin_perimeter"),
-                 plotOutput("violin_texture"),
+                 plotOutput("violin_concave"),
                  plotOutput("violin_area"),
-                 plotOutput("faceted_density_plot"),
+                 plotOutput("faceted_density_radius"),
+                 plotOutput("faceted_density_perimeter"),
+                 plotOutput("faceted_density_concave"),
+                 plotOutput("faceted_density_area"),
                  plotOutput("pair_plot"),
                  plotOutput("diagnosis_count_bar"),
                  plotOutput("pca_scree_plot"),
@@ -112,160 +125,118 @@ ui <- fluidPage(
 
 server <- function(input, output) {
   
-#     observeEvent(input$predict_btn, {
-#     # Collect all input features dynamically
-#     new_data <- data.frame(
-#     radius_mean = as.numeric(input$radius),
-#     texture_mean = as.numeric(input$texture),
-#     perimeter_mean = as.numeric(input$perimeter),
-#     area_mean = as.numeric(input$area),
-#     smoothness_mean = as.numeric(input$smoothness),
-#     compactness_mean = as.numeric(input$compactness),
-#     concavity_mean = as.numeric(input$concavity),
-#     concave_points_mean = as.numeric(input$concave_points),
-#     symmetry_mean = as.numeric(input$symmetry),
-#     fractal_dimension_mean = as.numeric(input$fractal_dimension)
-#   )
-#   
-#   # Predict using the updated model
-#   prediction <- predict(model, new_data)
-#   
-#   # Render prediction result
-#   output$prediction <- renderText({
-#     paste("Prediction: ", prediction)
-#   })
-# })
-#   
-  observeEvent(input$predict_btn, {
-    # Collect all input features dynamically
-    new_data <- data.frame(
-      radius_mean = as.numeric(input$radius),
-      texture_mean = as.numeric(input$texture),
-      perimeter_mean = as.numeric(input$perimeter),
-      area_mean = as.numeric(input$area),
-      smoothness_mean = as.numeric(input$smoothness),
-      compactness_mean = as.numeric(input$compactness),
-      concavity_mean = as.numeric(input$concavity),
-      concave.points_mean = as.numeric(input$concave_points),
-      symmetry_mean = as.numeric(input$symmetry),
-      radius_se = as.numeric(input$radius_se),
-      fractal_dimension_mean = as.numeric(input$fractal_dimension)
-    )
-
-    # Predict using the updated model
-    prediction <- predict(model, new_data)
-
-    # Render prediction result
-    output$prediction <- renderText({
-      paste("Prediction: ", prediction)
-    })
+observeEvent(input$submit, {
+  tryCatch({
+    # Ensure all inputs are numeric and within a valid range
+    if (is.numeric(input$area_worst) && is.numeric(input$perimeter_worst) && 
+        is.numeric(input$concave.points_worst) && is.numeric(input$radius_worst)) {
+        
+      new_data <- data.frame(
+        area_worst = as.numeric(input$area_worst),
+        perimeter_worst = as.numeric(input$perimeter_worst),
+        concave.points_worst = as.numeric(input$concave.points_worst),
+        radius_worst = as.numeric(input$radius_worst)
+      )
+      
+      prediction <- predict(model, new_data)
+      output$predictionResult <- renderText({ paste("Prediction:", prediction) })
+    } else {
+      output$predictionResult <- renderText({ "Please enter valid numeric values for all inputs." })
+    }
+  }, error = function(e) {
+    output$predictionResult <- renderText({ paste("Error: ", e$message) })
   })
-
-  output$prediction <- renderPrint({
-    # req(input$smoothness_mean)  # Check if input exists
-
-    # Create a new data frame for prediction
-    new_data <- data.frame(
-      # smoothness_mean = as.numeric(input$smoothness_mean),
-      radius_mean = as.numeric(input$radius_mean),
-      # Add all other required variables here...
-    )
-    
-    # Check if all required columns are present
-    print(str(new_data))  # Debugging purpose
-    
-    # Make prediction
-    predict(model, new_data)
-  })
+})
   
-  # Histogram: Distribution of Radius Mean
+  
+  # Histogram: Distribution of radius_worst
   output$histogram_radius <- renderPlot({
-    ggplot(data, aes(x = radius_mean)) +
+    ggplot(data, aes(x = radius_worst)) +
       geom_histogram(binwidth = 1, fill = "lightblue", color = "black", alpha = 0.7) +
-      labs(title = "Histogram of Radius Mean", x = "Radius Mean", y = "Frequency") +
+      labs(title = "Histogram of radius_worst", x = "radius_worst", y = "Frequency") +
       theme_minimal()
   })
   
-  # Histogram: Distribution of perimeter Mean
+  # Histogram: Distribution of perimeter_worst
   output$histogram_perimeter <- renderPlot({
-    ggplot(data, aes(x = perimeter_mean)) +
+    ggplot(data, aes(x = perimeter_worst)) +
       geom_histogram(binwidth = 1, fill = "lightblue", color = "black", alpha = 0.7) +
-      labs(title = "Histogram of primeter Mean", x = "perimeter Mean", y = "Frequency") +
+      labs(title = "Histogram of primeter worst", x = "perimeter Mean", y = "Frequency") +
       theme_minimal()
   })
   
-  # Histogram: Distribution of texture Mean
-  output$histogram_texture <- renderPlot({
-    ggplot(data, aes(x = texture_mean)) +
+  # Histogram: Distribution of concave.points_worst
+  output$histogram_concave <- renderPlot({
+    ggplot(data, aes(x = concave.points_worst)) +
       geom_histogram(binwidth = 1, fill = "lightblue", color = "black", alpha = 0.7) +
-      labs(title = "Histogram of texture Mean", x = "texture mean", y = "Frequency") +
+      labs(title = "Histogram of concave.points_worst", x = "concave.points_worst", y = "Frequency") +
       theme_minimal()
   })
   
   # Histogram: Distribution of area Mean
   output$histogram_area <- renderPlot({
-    ggplot(data, aes(x = area_mean)) +
+    ggplot(data, aes(x = area_worst)) +
       geom_histogram(binwidth = 1, fill = "lightblue", color = "black", alpha = 0.7) +
-      labs(title = "Histogram of area Mean", x = "area mean", y = "Frequency") +
+      labs(title = "Histogram of area_worst", x = "area_worst", y = "Frequency") +
       theme_minimal()
   })
   
   # Boxplot: radius Mean by Diagnosis
   output$boxplot_radius <- renderPlot({
-    ggplot(data, aes(x = diagnosis, y = radius_mean, fill = diagnosis)) +
+    ggplot(data, aes(x = diagnosis, y = radius_worst, fill = diagnosis)) +
       geom_boxplot() +
-      labs(title = "Boxplot of radius Mean by Diagnosis", x = "Diagnosis", y = "radius Mean") +
+      labs(title = "Boxplot of radius_worst by Diagnosis", x = "Diagnosis", y = "radius_worst") +
       scale_fill_manual(values = c("M" = "red", "B" = "green")) +
       theme_minimal()
   })
   
-  # Boxplot: perimeter Mean by Diagnosis
+  # Boxplot: perimeter_worst by Diagnosis
   output$boxplot_perimeter <- renderPlot({
-    ggplot(data, aes(x = diagnosis, y = perimeter_mean, fill = diagnosis)) +
+    ggplot(data, aes(x = diagnosis, y = perimeter_worst, fill = diagnosis)) +
       geom_boxplot() +
-      labs(title = "Boxplot of Perimeter Mean by Diagnosis", x = "Diagnosis", y = "Perimeter Mean") +
+      labs(title = "Boxplot of perimeter_worst by Diagnosis", x = "Diagnosis", y = "perimeter_worst") +
       scale_fill_manual(values = c("M" = "red", "B" = "green")) +
       theme_minimal()
   })
   
   # Boxplot: Texture Mean by Diagnosis
-  output$boxplot_texture <- renderPlot({
-    ggplot(data, aes(x = diagnosis, y = texture_mean, fill = diagnosis)) +
+  output$boxplot_concave <- renderPlot({
+    ggplot(data, aes(x = diagnosis, y = concave.points_worst, fill = diagnosis)) +
       geom_boxplot() +
-      labs(title = "Boxplot of texture Mean by Diagnosis", x = "Diagnosis", y = "Texture Mean") +
+      labs(title = "Boxplot of concave.points_worst by Diagnosis", x = "Diagnosis", y = "concave.points_worst") +
       scale_fill_manual(values = c("M" = "red", "B" = "green")) +
       theme_minimal()
   })
   
   # Boxplot: Area Mean by Diagnosis
   output$boxplot_area <- renderPlot({
-    ggplot(data, aes(x = diagnosis, y = area_mean, fill = diagnosis)) +
+    ggplot(data, aes(x = diagnosis, y = area_worst, fill = diagnosis)) +
       geom_boxplot() +
-      labs(title = "Boxplot of Area Mean by Diagnosis", x = "Diagnosis", y = "Area Mean") +
+      labs(title = "Boxplot of area_worst by Diagnosis", x = "Diagnosis", y = "area_worst") +
       scale_fill_manual(values = c("M" = "red", "B" = "green")) +
       theme_minimal()
   })
   
-  # densityplot: radius Mean by Diagnosis
+  # densityplot: radius by Diagnosis
   output$density_radius <- renderPlot({
-  ggplot(data, aes(x = radius_mean, fill = diagnosis)) +
+  ggplot(data, aes(x = radius_worst, fill = diagnosis)) +
     geom_density(alpha = 0.5) +
     labs(
-      title = "Density Plot of Radius Mean by Diagnosis",
-      x = "Radius Mean",
+      title = "Density Plot of radius_worst by Diagnosis",
+      x = "radius_worst",
       y = "Density"
     ) +
     scale_fill_manual(values = c("B" = "green", "M" = "red")) +
     theme_minimal()
  })
   
-  # densityplot: perimeter Mean by Diagnosis
+  # densityplot: perimeter_worst by Diagnosis
   output$density_perimeter <- renderPlot({
-  ggplot(data, aes(x = perimeter_mean, fill = diagnosis)) +
+  ggplot(data, aes(x = perimeter_worst, fill = diagnosis)) +
     geom_density(alpha = 0.5) +
     labs(
-      title = "Density Plot of perimeter Mean by Diagnosis",
-      x = "perimeter Mean",
+      title = "Density Plot of perimeter_worst by Diagnosis",
+      x = "perimeter_worst",
       y = "Density"
     ) +
     scale_fill_manual(values = c("B" = "green", "M" = "red")) +
@@ -273,12 +244,12 @@ server <- function(input, output) {
  })
   
   # densityplot: texture Mean by Diagnosis
-  output$density_texture <- renderPlot({
-  ggplot(data, aes(x = texture_mean, fill = diagnosis)) +
+  output$density_concave <- renderPlot({
+  ggplot(data, aes(x = concave.points_worst, fill = diagnosis)) +
     geom_density(alpha = 0.5) +
     labs(
-      title = "Density Plot of texture Mean by Diagnosis",
-      x = "texture Mean",
+      title = "Density Plot of concave.points_worst by Diagnosis",
+      x = "concave.points_worst",
       y = "Density"
     ) +
     scale_fill_manual(values = c("B" = "green", "M" = "red")) +
@@ -287,51 +258,51 @@ server <- function(input, output) {
   
   # densityplot: area Mean by Diagnosis
   output$density_area <- renderPlot({
-  ggplot(data, aes(x = area_mean, fill = diagnosis)) +
+  ggplot(data, aes(x = area_worst, fill = diagnosis)) +
     geom_density(alpha = 0.5) +
     labs(
-      title = "Density Plot of area Mean by Diagnosis",
-      x = "area Mean",
+      title = "Density Plot of area_worst by Diagnosis",
+      x = "area_worst",
       y = "Density"
     ) +
     scale_fill_manual(values = c("B" = "green", "M" = "red")) +
     theme_minimal()
  })
   
-  # violinplot: radius Mean by Diagnosis
+  # violinplot: radius by Diagnosis
   output$violin_radius <- renderPlot({
-  ggplot(data, aes(x = diagnosis, y = radius_mean, fill = diagnosis)) +
+  ggplot(data, aes(x = diagnosis, y = radius_worst, fill = diagnosis)) +
     geom_violin(trim = TRUE, alpha = 0.7) +
     labs(
-      title = "Violin Plot of Radius Mean by Diagnosis",
+      title = "Violin Plot of radius_worst by Diagnosis",
       x = "Diagnosis",
-      y = "Radius Mean"
+      y = "radius_worst"
     ) +
     scale_fill_manual(values = c("B" = "green", "M" = "red")) +
     theme_minimal()
 })
   
-  # violinplot: perimeter Mean by Diagnosis
+  # violinplot: perimeter_worst by Diagnosis
   output$violin_perimeter <- renderPlot({
-  ggplot(data, aes(x = diagnosis, y = perimeter_mean, fill = diagnosis)) +
+  ggplot(data, aes(x = diagnosis, y = perimeter_worst, fill = diagnosis)) +
     geom_violin(trim = TRUE, alpha = 0.7) +
     labs(
-      title = "Violin Plot of perimeter Mean by Diagnosis",
+      title = "Violin Plot of perimeter_worst by Diagnosis",
       x = "Diagnosis",
-      y = "perimeter Mean"
+      y = "perimeter_worst"
     ) +
     scale_fill_manual(values = c("B" = "green", "M" = "red")) +
     theme_minimal()
 })
   
   # violinplot: texture Mean by Diagnosis
-  output$violin_texture <- renderPlot({
-  ggplot(data, aes(x = diagnosis, y = texture_mean, fill = diagnosis)) +
+  output$violin_concave <- renderPlot({
+  ggplot(data, aes(x = diagnosis, y = concave.points_worst, fill = diagnosis)) +
     geom_violin(trim = TRUE, alpha = 0.7) +
     labs(
-      title = "Violin Plot of texture Mean by Diagnosis",
+      title = "Violin Plot of concave.points_worst by Diagnosis",
       x = "Diagnosis",
-      y = "texture Mean"
+      y = "concave.points_worst"
     ) +
     scale_fill_manual(values = c("B" = "green", "M" = "red")) +
     theme_minimal()
@@ -339,23 +310,65 @@ server <- function(input, output) {
   
   # violinplot: area Mean by Diagnosis
   output$violin_area <- renderPlot({
-  ggplot(data, aes(x = diagnosis, y = area_mean, fill = diagnosis)) +
+  ggplot(data, aes(x = diagnosis, y = area_worst, fill = diagnosis)) +
     geom_violin(trim = TRUE, alpha = 0.7) +
     labs(
-      title = "Violin Plot of area Mean by Diagnosis",
+      title = "Violin Plot of area_worst by Diagnosis",
       x = "Diagnosis",
-      y = "area Mean"
+      y = "area_worst"
     ) +
     scale_fill_manual(values = c("B" = "green", "M" = "red")) +
     theme_minimal()
 })
-  
-  output$faceted_density_plot <- renderPlot({
-  ggplot(data, aes(x = radius_mean, fill = diagnosis)) +
+  #facet density plot
+  output$faceted_density_radius <- renderPlot({
+  ggplot(data, aes(x = radius_worst, fill = diagnosis)) +
     geom_density(alpha = 0.5) +
     labs(
-      title = "Faceted Density Plot of Radius Mean by Diagnosis",
-      x = "Radius Mean",
+      title = "Faceted Density Plot of radius_worst by Diagnosis",
+      x = "radius_worst",
+      y = "Density"
+    ) +
+    facet_grid(. ~ diagnosis) +  # Facet columns by 'diagnosis'
+    scale_fill_manual(values = c("B" = "green", "M" = "red")) +
+    theme_minimal()
+})
+  
+  #facet density plot
+  output$faceted_density_perimeter <- renderPlot({
+  ggplot(data, aes(x = perimeter_worst, fill = diagnosis)) +
+    geom_density(alpha = 0.5) +
+    labs(
+      title = "Faceted Density Plot of perimeter_worst by Diagnosis",
+      x = "perimeter_worst",
+      y = "Density"
+    ) +
+    facet_grid(. ~ diagnosis) +  # Facet columns by 'diagnosis'
+    scale_fill_manual(values = c("B" = "green", "M" = "red")) +
+    theme_minimal()
+})
+  
+  #facet density plot
+  output$faceted_density_concave <- renderPlot({
+  ggplot(data, aes(x = concave.points_worst, fill = diagnosis)) +
+    geom_density(alpha = 0.5) +
+    labs(
+      title = "Faceted Density Plot of concave.points_worst by Diagnosis",
+      x = "texture Mean",
+      y = "Density"
+    ) +
+    facet_grid(. ~ diagnosis) +  # Facet columns by 'diagnosis'
+    scale_fill_manual(values = c("B" = "green", "M" = "red")) +
+    theme_minimal()
+})
+  
+  #facet density plot
+  output$faceted_density_area <- renderPlot({
+  ggplot(data, aes(x = area_worst, fill = diagnosis)) +
+    geom_density(alpha = 0.5) +
+    labs(
+      title = "Faceted Density Plot of area_worst by Diagnosis",
+      x = "area_worst",
       y = "Density"
     ) +
     facet_grid(. ~ diagnosis) +  # Facet columns by 'diagnosis'
@@ -366,7 +379,7 @@ server <- function(input, output) {
   # Pair Plot: Relationships between numeric features
   output$pair_plot <- renderPlot({
     selected_data <- data %>%
-      select(radius_mean, texture_mean, perimeter_mean, area_mean)
+      select(radius_worst, concave.points_worst, perimeter_worst, area_worst)
     
     pairs(selected_data, 
           col = ifelse(data$diagnosis == "M", "red", "green"),
@@ -428,7 +441,7 @@ server <- function(input, output) {
   
   # Feature Importance Visualization
   output$importance_plot <- renderPlot({
-    varImp <- varImp(model, scale = FALSE)
+    varImp <- varImp(model1, scale = FALSE)
     varImp_df <- as.data.frame(varImp$importance)
     
     ggplot(varImp_df, aes(x = reorder(rownames(varImp_df), Overall), y = Overall)) +
